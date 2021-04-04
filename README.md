@@ -2,6 +2,8 @@
 
 A tool to update a record on Cloudflare with the public IP address of the running machine.
 
+This program hits 3 different endpoints in an attempt to find out the public facing IP address of the running machine. Using the first successful response, it updates the specified record on Cloudflare, in case it's outdated.
+
 # Running
 
 To run this, you'll need:
@@ -16,7 +18,7 @@ To run this, you'll need:
 
 Install [.NET 5](http://dot.net/)
 
-Build and publish it in release mode. These instructions describe a [self-contained](https://docs.microsoft.com/en-us/dotnet/core/deploying/#publish-self-contained) app so you don't need to install the .NET runtime in the target machine. It's just like a native executable:
+Build and publish it in release mode. These instructions describe a [self-contained](https://docs.microsoft.com/en-us/dotnet/core/deploying/#publish-self-contained) app so you don't need to install the .NET runtime in the target machine. It's just a native executable:
 
 `dotnet publish -c release -r osx-x64`
 
@@ -49,14 +51,39 @@ dotnet run -- zone_id domain.to.update cloudflare_key
 
 # Sentry
 
-This project is instrumented with [Sentry](https://sentry.io). If you provide a Sentry DSN (which you can get for free on sentry.io) it will send telemetry data including crash reports. You can then configure Sentry to send alerts to you by email or other mechanism, to let you know if the job stopped working and detailed information about what went wrong.
+This project is instrumented with [Sentry](https://sentry.io). If you provide a Sentry DSN (which you can get for free on sentry.io) it will send telemetry data including crash reports and timing information about each run.
+
+You can then configure Sentry to send alerts to you by email or other mechanism, to let you know if the job stopped working and detailed information about what went wrong.
 
 To enable Sentry, provide a DSN via environment variable. For example:
 
-````
+```
 SENTRY_DSN=https://963basdasdaba3a48a69378145586f70b65@o117736.ingest.sentry.io/5703176 \
     SENTRY_DEBUG=1 \
     ./CloudflareDynamicDns
 ```
 
 `SENTRY_DEBUG=1` is optional, but helps when setting things up, to see what the Sentry SDK is doing.
+
+An example transaction created by this program:
+
+![Sentry transaction](.github/sentry-transaction-example.png)
+
+# FAQ:
+
+### Q: What's is the _record_?
+
+A: Record is the DNS `A` record you're trying to update on Cloudflare. It must be the fully qualified name (FQDN). For example: `my-host.mydomain.com`.
+The record must exist already on Cloudflare. This process isn't going to create it.
+
+### Q: Where do I get the Zone Id?
+A: When you login to Cloudflare, already on the _dashboard_, on the right side panel you can see the _Zone Id_ under _API_.
+
+### Q: Where do I get the API token?
+A: Right under the _Zone Id_ described above, there's a link to create API tokens.
+
+### Q: What permission does the API token need?
+A: It only needs _Zone_ -> _DSN_ -> _Edit_ only for the zone you want to change.
+
+### Q: Do I need to use Sentry?
+A: No. If you don't provide a `SENTRY_DSN`, nothing is sent to Sentry. That also means you won't get any information about failures or alerts if the job you setup to run this program stops running (i.e: Raspberry Pi shuts down.).
