@@ -12,7 +12,6 @@
 <!--    <TrimMode>Link</TrimMode>-->
     <PublishSingleFile>True</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
-    <!-- Trade smaller binary for slower startup: -->
     <ReadyToRun>True</ReadyToRun>
     <DebuggerSupport>False</DebuggerSupport>
     <EnableUnsafeUTF7Encoding>False</EnableUnsafeUTF7Encoding>
