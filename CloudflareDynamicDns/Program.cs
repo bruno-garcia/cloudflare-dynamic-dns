@@ -13,9 +13,9 @@ using System.Threading.Tasks;
 using Sentry;
 using static System.Console;
 
+// To enable Sentry, provide the Sentry DSN via environment variable: SENTRY_DSN
 SentrySdk.Init(o =>
 {
-    o.Dsn = "https://963b1a54ba3a48a69378145586f70b65@o117736.ingest.sentry.io/5703176";
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
     o.SendDefaultPii = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
