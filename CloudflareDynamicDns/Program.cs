@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Sentry;
 using static System.Console;
 
-using var _ = SentrySdk.Init(o =>
+SentrySdk.Init(o =>
 {
     o.Dsn = "https://963b1a54ba3a48a69378145586f70b65@o117736.ingest.sentry.io/5703176";
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
@@ -19,85 +21,120 @@ using var _ = SentrySdk.Init(o =>
 });
 var transaction = SentrySdk.StartTransaction("dynamic-dns", "dns-update");
 SentrySdk.ConfigureScope(s => s.Transaction = transaction);
-
-var ctrlC = new CancellationTokenSource();
-Console.CancelKeyPress += (sender, args) =>
-{
-    args.Cancel = true;
-    Console.WriteLine("CTRL+C");
-    ctrlC.Cancel(true);
-};
-
-var transactionStatus = SpanStatus.Ok; 
-
-var serviceUrls = new []
-{
-    "https://checkip.amazonaws.com",
-    "https://api.ipify.org",
-    "https://api.my-ip.io/ip",
-};
-
-var updateDnsSpan = transaction.StartChild("update.dns");
 try
 {
-    using var client = new HttpClient();
-    // spans from this integration end up picking up the wrong parent
-    // using var client = new HttpClient(new SentryHttpMessageHandler());
+    // TODO: Properly validate expected input
+    var zoneId = args[0];
+    var record = args[1];
+    var auth = args[1];
 
-    var ipAddress = await GetIpAddress(client, updateDnsSpan, serviceUrls, ctrlC.Token);
-    transaction.SetTag("ip_address", ipAddress);
-    var processIpSpan = transaction.StartChild("process.ip");
+    var ctrlC = new CancellationTokenSource();
+    Console.CancelKeyPress += (sender, args) =>
+    {
+        args.Cancel = true;
+        Console.WriteLine("CTRL+C");
+        ctrlC.Cancel(true);
+    };
+
+    var transactionStatus = SpanStatus.Ok; 
+
+    var serviceUrls = new []
+    {
+        "https://checkip.amazonaws.com",
+        "https://api.ipify.org",
+        "https://api.my-ip.io/ip",
+    };
+
+    var updateDnsSpan = transaction.StartChild("update.dns");
     try
     {
-        WriteLine(ipAddress);
+        using var client = new HttpClient();
+        // spans from this integration end up picking up the wrong parent
+        // using var client = new HttpClient(new SentryHttpMessageHandler());
 
-        var successEvent = new SentryEvent
+        var ipAddressTask = GetIpAddress(client, updateDnsSpan, serviceUrls, ctrlC.Token);;
+        var recordIdTask = GetCloudflareRecordId(client, zoneId, record, auth, ctrlC.Token);
+        await Task.WhenAll(ipAddressTask, recordIdTask);
+        var ipAddress = ipAddressTask.Result;
+        var recordId = recordIdTask.Result;
+        transaction.SetTag("ip_address", ipAddress);
+        var processIpSpan = transaction.StartChild("process.ip");
+        try
         {
-            // Stacktrace is always included, and even if we change the code, lets group everything under this key:
-            Fingerprint = new[] {"success"},
-            Level = SentryLevel.Info,
-            Message = new SentryMessage {Formatted = $"Successfully resolved public IP address",},
-        };
-        successEvent.SetTag("resolved-ip-address", ipAddress);
+            WriteLine(ipAddress);
 
-        // Sentry Alert will be set to trigger if the following event isn't coming through at the expected rate.
-        // Example: every hour or so, depending how the cron job running this process is setup.
-        SentrySdk.CaptureEvent(successEvent);
+            var successEvent = new SentryEvent
+            {
+                // Stacktrace is always included, and even if we change the code, lets group everything under this key:
+                Fingerprint = new[] {"success"},
+                Level = SentryLevel.Info,
+                Message = new SentryMessage {Formatted = $"Successfully resolved public IP address",},
+            };
+            successEvent.SetTag("resolved-ip-address", ipAddress);
+
+            // Sentry Alert will be set to trigger if the following event isn't coming through at the expected rate.
+            // Example: every hour or so, depending how the cron job running this process is setup.
+            SentrySdk.CaptureEvent(successEvent);
+        }
+        finally
+        {
+            processIpSpan.Finish();
+        }
+    }
+    catch (AllServicesFailedException)
+    {
+        var failure = new SentryEvent
+        {
+            Level = SentryLevel.Fatal,
+            Message = new SentryMessage{Formatted = $"All {serviceUrls.Length} failed to resolve"},
+            Fingerprint = new[] {"all-services-failed"}
+        };
+        SentrySdk.CaptureEvent(failure);
+    }
+    catch (Exception e)
+    {
+        SentrySdk.CaptureEvent(new SentryEvent(e)
+        {
+            Level = SentryLevel.Fatal
+        });
+
+        transactionStatus = SpanStatus.InternalError; // Make sure the transaction fails
+        // https://github.com/getsentry/sentry-dotnet/issues/919
+        // transaction.Status = SpanStatus.InternalError;
+        throw;
     }
     finally
     {
-        processIpSpan.Finish();
+        ctrlC.Dispose();
+        updateDnsSpan.Finish();
+        transaction.Finish(transactionStatus);
     }
-}
-catch (AllServicesFailedException)
-{
-    var failure = new SentryEvent
-    {
-        Level = SentryLevel.Fatal,
-        Message = new SentryMessage{Formatted = $"All {serviceUrls.Length} failed to resolve"},
-        Fingerprint = new[] {"all-services-failed"}
-    };
-    SentrySdk.CaptureEvent(failure);
-}
-catch (Exception e)
-{
-    SentrySdk.CaptureEvent(new SentryEvent(e)
-    {
-        Level = SentryLevel.Fatal
-    });
-
-    transactionStatus = SpanStatus.InternalError; // Make sure the transaction fails
-    // https://github.com/getsentry/sentry-dotnet/issues/919
-    // transaction.Status = SpanStatus.InternalError;
-    throw;
 }
 finally
 {
-    ctrlC.Dispose();
-    updateDnsSpan.Finish();
-    transaction.Finish(transactionStatus);
     // Wait for events to be sent.
-    await SentrySdk.FlushAsync(TimeSpan.FromSeconds(15));
+    await SentrySdk.FlushAsync(TimeSpan.FromSeconds(10));
+}
+
+static async Task<string> GetCloudflareRecordId(
+    HttpClient client,
+    string zoneId, string record, string auth,
+    CancellationToken token)
+{
+    var url = $"https://api.cloudflare.com/client/v4/zones/{zoneId}/dns_records?type=A&name={record}";
+    var request = new HttpRequestMessage(HttpMethod.Get, url);
+    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
+    var response = await client.SendAsync(request, token);
+
+    var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
+    Console.WriteLine(json);
+    var id = json?.result?[0].id;
+    if (id is null)
+    {
+        throw new Exception($"Expected zone id but received code '{response.StatusCode}' and body:\n{json}");
+    }
+
+    return id;
 }
 
 static async Task<string> GetIpAddress(
