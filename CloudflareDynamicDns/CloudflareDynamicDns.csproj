@@ -4,10 +4,27 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <PublishTrimmed>True</PublishTrimmed>
+<!--    <TrimMode>Link</TrimMode>-->
+    <PublishSingleFile>True</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
+    <!-- Trade smaller binary for slower startup: -->
+    <ReadyToRun>True</ReadyToRun>
+    <DebuggerSupport>False</DebuggerSupport>
+    <EnableUnsafeUTF7Encoding>False</EnableUnsafeUTF7Encoding>
+    <EnableUnsafeBinaryFormatterSerialization>False</EnableUnsafeBinaryFormatterSerialization>
+    <EventSourceSupport>False</EventSourceSupport>
+    <InvariantGlobalization>False</InvariantGlobalization>
+    <UseSystemResourceKeys>True</UseSystemResourceKeys>
+    <HttpActivityPropagationSupport>False</HttpActivityPropagationSupport>
+  </PropertyGroup>
+  
   <ItemGroup>
-    <PackageReference Include="Sentry" Version="3.2.0" />
+    <PackageReference Include="Sentry" Version="3.3.0" />
   </ItemGroup>
 
 </Project>
