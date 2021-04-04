@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,15 +20,26 @@ SentrySdk.Init(o =>
     o.SendDefaultPii = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
     o.Debug = true;
+    // https://github.com/getsentry/sentry-dotnet/issues/921
+    o.Environment = Debugger.IsAttached ? "debug" : null;
 });
 var transaction = SentrySdk.StartTransaction("dynamic-dns", "dns-update");
 SentrySdk.ConfigureScope(s => s.Transaction = transaction);
+// TODO: Remove once resolved: https://github.com/getsentry/sentry-dotnet/issues/920
+SentrySdk.ConfigureScope(s => s.SetTag("run-id", Guid.NewGuid().ToString()));
 try
 {
     // TODO: Properly validate expected input
     var zoneId = args[0];
     var record = args[1];
-    var auth = args[1];
+    var auth = args[2];
+    SentrySdk.ConfigureScope(s =>
+    {
+        s.SetTag("record", record);
+        s.SetTag("zoneId", zoneId);
+        // TODO: Validate if auth got here empty or broken (less 3 or less chars)
+        s.SetTag("truncated.auth", auth[..3]);
+    });
 
     var ctrlC = new CancellationTokenSource();
     Console.CancelKeyPress += (sender, args) =>
@@ -38,6 +51,7 @@ try
 
     var transactionStatus = SpanStatus.Ok; 
 
+    // TODO: Configurable:
     var serviceUrls = new []
     {
         "https://checkip.amazonaws.com",
@@ -48,27 +62,42 @@ try
     var updateDnsSpan = transaction.StartChild("update.dns");
     try
     {
-        using var client = new HttpClient();
-        // spans from this integration end up picking up the wrong parent
+        // spans from this integration end up picking up the wrong parent "last active span"
+        // and showing requests as chained when in fact they are parallelized
         // using var client = new HttpClient(new SentryHttpMessageHandler());
+        using var client = new HttpClient();
 
+
+        // Starting first as usually slower to resolve than the task below
+        var recordIdTask = GetCloudflareRecordId(client, updateDnsSpan, zoneId, record, auth, ctrlC.Token);
         var ipAddressTask = GetIpAddress(client, updateDnsSpan, serviceUrls, ctrlC.Token);;
-        var recordIdTask = GetCloudflareRecordId(client, zoneId, record, auth, ctrlC.Token);
-        await Task.WhenAll(ipAddressTask, recordIdTask);
+        // TODO: Verify token first?
+        // curl -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+
+        var awaitTask = updateDnsSpan.StartChild("task.await", 
+            $"Awaiting {nameof(recordIdTask)} and {nameof(ipAddressTask)}");
+        try
+        {
+            await Task.WhenAll(ipAddressTask, recordIdTask);
+        }
+        finally
+        {
+            awaitTask.Finish();
+        }
         var ipAddress = ipAddressTask.Result;
         var recordId = recordIdTask.Result;
         transaction.SetTag("ip_address", ipAddress);
         var processIpSpan = transaction.StartChild("process.ip");
         try
         {
-            WriteLine(ipAddress);
-
+            await UpdateDnsRecord(client, updateDnsSpan, ipAddress, zoneId, record, recordId, auth, ctrlC.Token);
+            WriteLine($"Updated to: {ipAddress}");
             var successEvent = new SentryEvent
             {
                 // Stacktrace is always included, and even if we change the code, lets group everything under this key:
                 Fingerprint = new[] {"success"},
                 Level = SentryLevel.Info,
-                Message = new SentryMessage {Formatted = $"Successfully resolved public IP address",},
+                Message = new SentryMessage {Formatted = $"Successfully updated public IP address",},
             };
             successEvent.SetTag("resolved-ip-address", ipAddress);
 
@@ -93,10 +122,7 @@ try
     }
     catch (Exception e)
     {
-        SentrySdk.CaptureEvent(new SentryEvent(e)
-        {
-            Level = SentryLevel.Fatal
-        });
+        SentrySdk.CaptureEvent(new SentryEvent(e) {Level = SentryLevel.Fatal});
 
         transactionStatus = SpanStatus.InternalError; // Make sure the transaction fails
         // https://github.com/getsentry/sentry-dotnet/issues/919
@@ -117,24 +143,93 @@ finally
 }
 
 static async Task<string> GetCloudflareRecordId(
-    HttpClient client,
+    HttpMessageInvoker client,
+    ISpan parent,
     string zoneId, string record, string auth,
     CancellationToken token)
 {
-    var url = $"https://api.cloudflare.com/client/v4/zones/{zoneId}/dns_records?type=A&name={record}";
-    var request = new HttpRequestMessage(HttpMethod.Get, url);
-    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
-    var response = await client.SendAsync(request, token);
-
-    var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
-    Console.WriteLine(json);
-    var id = json?.result?[0].id;
-    if (id is null)
+    var span = parent.StartChild("fetch.zone.id", "Retrieve zone id from cloudflare");
+    var spanStatus = SpanStatus.Ok;
+    try
     {
-        throw new Exception($"Expected zone id but received code '{response.StatusCode}' and body:\n{json}");
-    }
+        var url = $"https://api.cloudflare.com/client/v4/zones/{zoneId}/dns_records?type=A&name={record}";
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
+        var response = await client.SendAsync(request, token);
 
-    return id;
+        // var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
+        var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
+        var id = json?.result?[0].id;
+        if (id is null)
+        {
+            throw new Exception($"Expected zone id but received code '{response.StatusCode}'" +
+                                $" and body:\n{await response.Content.ReadAsStringAsync(token)}");
+        }
+
+        return id;
+    }
+    catch
+    {
+        spanStatus = SpanStatus.UnknownError;
+        throw;
+    }
+    finally
+    {
+        span.Finish(spanStatus);
+    }
+}
+
+static async Task UpdateDnsRecord(
+    HttpMessageInvoker client,
+    ISpan parent,
+    string ipAddress,
+    string zoneId,
+    string record,
+    string recordId,
+    string auth,
+    CancellationToken token)
+{
+    var span = parent.StartChild("update.dns.record", $"Update cloudflare record: '{record}'");
+    var spanStatus = SpanStatus.Ok;
+    try
+    {
+        var url = $"https://api.cloudflare.com/client/v4/zones/{zoneId}/dns_records/{recordId}";
+        var request = new HttpRequestMessage(HttpMethod.Put, url);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        // request.Headers.Add("Content-Type", "application/json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
+        var payload =
+            $"{{\"type\":\"A\",\"name\":\"{record}\",\"content\":\"{ipAddress}\",\"ttl\":1,\"proxied\":false}}";
+        request.Content =
+            new StringContent(
+                payload,
+                Encoding.UTF8,
+                "application/json");
+
+        var response = await client.SendAsync(request, token);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
+            var ex = new Exception($"Cloudflare request failed: status {response.StatusCode}");
+            ex.AddSentryContext("http.context", new Dictionary<string, object>
+            {
+                {"request", payload},
+                {"response", body},
+            });
+            throw ex;
+        }
+    }
+    catch
+    {
+        // TODO: Expose Sentry's SDK HttpStatus to SpanStatus mapping
+        spanStatus = SpanStatus.UnknownError;
+        throw;
+    }
+    finally
+    {
+        span.Finish(spanStatus);
+    }
 }
 
 static async Task<string> GetIpAddress(
@@ -175,8 +270,11 @@ static async Task<string> GetIpAddress(
             var taskSpan = querySpan.StartChild("task.any");
             var completedTask = await Task.WhenAny(queries);
             var status = completedTask.ToSpanStatus();
-            taskSpan.Finish(status);
             var service = taskToService[completedTask];
+            taskSpan.Description = $"Status {status}";
+            taskSpan.Finish(status);
+            
+            querySpan.Description = $"Processing: {service}";
             querySpan.SetTag("service", service);
 
             SentrySdk.AddBreadcrumb($"Completed request with '{service}'",
@@ -195,6 +293,7 @@ static async Task<string> GetIpAddress(
                     serviceResponse = Regex.Replace(serviceResponse, "[^0-9.]", "");
                     var ipAddress = IPAddress.Parse(serviceResponse).ToString();
                     cancelSource.Cancel(); // Cancel any other get in-flight
+                    parseSpan.Description = $"Resolved: {ipAddress}";
                     return ipAddress;
                 }
                 catch
@@ -260,15 +359,16 @@ static async Task<string> GetIpAddress(
     }
 }
 
-static class SpanExtension
+internal static class TaskExtensions
 {
+    
     public static SpanStatus ToSpanStatus(this Task task)
         => task.Status switch
         {
             TaskStatus.RanToCompletion => SpanStatus.Ok,
             TaskStatus.Canceled => SpanStatus.Cancelled,
             TaskStatus.Faulted => SpanStatus.InternalError,
-            _ => (SpanStatus)(-1) // No 'unknown' ?
+            _ => (SpanStatus)(-1) // No plain 'unknown' ?
             // _ => SpanStatus.UnknownError
         };
 }
@@ -276,4 +376,14 @@ static class SpanExtension
 internal class AllServicesFailedException : Exception
 {
     
+}
+
+internal class CloudflareResponse
+{
+    public ZoneInfo[]? result { get; set; }
+}
+
+internal class ZoneInfo
+{
+    public string? id { get; set; }
 }
