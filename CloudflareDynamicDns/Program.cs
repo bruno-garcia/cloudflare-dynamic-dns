@@ -19,11 +19,16 @@ SentrySdk.Init(o =>
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
     o.SendDefaultPii = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
-    o.Debug = true;
+    o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
     // https://github.com/getsentry/sentry-dotnet/issues/921
     o.Environment = Debugger.IsAttached ? "debug" : null;
 });
+
+// Sentry Alert will be set to trigger if the following transaction isn't coming through at the expected rate.
+// Example: every hour or so, depending how the cron job running this process is setup.
 var transaction = SentrySdk.StartTransaction("dynamic-dns", "dns-update");
+var transactionStatus = SpanStatus.Ok; 
+
 SentrySdk.ConfigureScope(s => s.Transaction = transaction);
 // TODO: Remove once resolved: https://github.com/getsentry/sentry-dotnet/issues/920
 SentrySdk.ConfigureScope(s => s.SetTag("run-id", Guid.NewGuid().ToString()));
@@ -41,15 +46,14 @@ try
         s.SetTag("truncated.auth", auth[..3]);
     });
 
-    var ctrlC = new CancellationTokenSource();
+    var tokenSource = new CancellationTokenSource();
     Console.CancelKeyPress += (sender, args) =>
     {
+        SentrySdk.AddBreadcrumb("ctrl-c received.");
         args.Cancel = true;
         Console.WriteLine("CTRL+C");
-        ctrlC.Cancel(true);
+        tokenSource.Cancel(true);
     };
-
-    var transactionStatus = SpanStatus.Ok; 
 
     // TODO: Configurable:
     var serviceUrls = new []
@@ -67,48 +71,68 @@ try
         // using var client = new HttpClient(new SentryHttpMessageHandler());
         using var client = new HttpClient();
 
+        // Get cloudflare record id in case the record needs to be updated (this takes the longest so kicking off first)
+        var recordIdTask = GetCloudflareRecordId(client, updateDnsSpan, zoneId, record, auth, tokenSource.Token);
 
-        // Starting first as usually slower to resolve than the task below
-        var recordIdTask = GetCloudflareRecordId(client, updateDnsSpan, zoneId, record, auth, ctrlC.Token);
-        var ipAddressTask = GetIpAddress(client, updateDnsSpan, serviceUrls, ctrlC.Token);;
-        // TODO: Verify token first?
-        // curl -X GET "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+        var resolveSpan = updateDnsSpan.StartChild("dns.resolve", $"Resolve '{record}'");
+        var ipAddressTask = GetIpAddress(client, updateDnsSpan, serviceUrls, tokenSource.Token);
+        var dnsResolve = Dns.GetHostAddressesAsync(record).ContinueWith(c =>
+        {
+            if (!c.IsFaulted)
+            {
+                resolveSpan.Description += $" IP: {string.Join(", ", c.Result.Select(i => i.ToString()))}";
+            }
+            resolveSpan.Finish(c.ToSpanStatus());
+            return c.Result;
+        });
 
         var awaitTask = updateDnsSpan.StartChild("task.await", 
-            $"Awaiting {nameof(recordIdTask)} and {nameof(ipAddressTask)}");
+            $"Awaiting {nameof(ipAddressTask)} and {nameof(dnsResolve)}");
         try
         {
-            await Task.WhenAll(ipAddressTask, recordIdTask);
+            await Task.WhenAll(ipAddressTask, dnsResolve);
         }
         finally
         {
             awaitTask.Finish();
         }
         var ipAddress = ipAddressTask.Result;
-        var recordId = recordIdTask.Result;
         transaction.SetTag("ip_address", ipAddress);
-        var processIpSpan = transaction.StartChild("process.ip");
-        try
+        var currentRecordIpAddress = dnsResolve.Result;
+        var updated = false;
+        if (currentRecordIpAddress.Any(r => ipAddress == r.ToString()))
         {
-            await UpdateDnsRecord(client, updateDnsSpan, ipAddress, zoneId, record, recordId, auth, ctrlC.Token);
-            WriteLine($"Updated to: {ipAddress}");
-            var successEvent = new SentryEvent
+            tokenSource.Cancel();
+            SentrySdk.AddBreadcrumb("Record already pointing to requested IP address. Nothing to do.");
+            WriteLine($"Already up-to-date: {ipAddress}");
+        }
+        else
+        {
+            var recordIdTaskSpan = updateDnsSpan.StartChild("record.id.await",
+                $"Awaiting {nameof(recordIdTask)}");
+            try
             {
-                // Stacktrace is always included, and even if we change the code, lets group everything under this key:
-                Fingerprint = new[] {"success"},
-                Level = SentryLevel.Info,
-                Message = new SentryMessage {Formatted = $"Successfully updated public IP address",},
-            };
-            successEvent.SetTag("resolved-ip-address", ipAddress);
+                await recordIdTask;
+            }
+            finally
+            {
+                recordIdTaskSpan.Finish();
+            }
 
-            // Sentry Alert will be set to trigger if the following event isn't coming through at the expected rate.
-            // Example: every hour or so, depending how the cron job running this process is setup.
-            SentrySdk.CaptureEvent(successEvent);
+            var recordId = recordIdTask.Result;
+            await UpdateDnsRecord(client, updateDnsSpan, ipAddress, zoneId, record, recordId, auth,
+                tokenSource.Token);
+            WriteLine($"Updated to: {ipAddress}");
+            SentrySdk.AddBreadcrumb("Successfully updated public IP address.");
+            updated = true;
         }
-        finally
+        SentrySdk.ConfigureScope(s =>
         {
-            processIpSpan.Finish();
-        }
+            s.SetTag("resolved-ip-address", ipAddress);
+            // To get distribution of when it was updated and when it was up-to-date 
+            s.SetTag("record-updated", updated.ToString());
+            s.SetTag("record-up-to-date", "true");
+        });
     }
     catch (AllServicesFailedException)
     {
@@ -131,7 +155,7 @@ try
     }
     finally
     {
-        ctrlC.Dispose();
+        tokenSource.Dispose();
         updateDnsSpan.Finish();
         transaction.Finish(transactionStatus);
     }
@@ -148,8 +172,7 @@ static async Task<string> GetCloudflareRecordId(
     string zoneId, string record, string auth,
     CancellationToken token)
 {
-    var span = parent.StartChild("fetch.zone.id", "Retrieve zone id from cloudflare");
-    var spanStatus = SpanStatus.Ok;
+    var span = parent.StartChild("record.id.http", $"Retrieve record id for {record} from Cloudflare");
     try
     {
         var url = $"https://api.cloudflare.com/client/v4/zones/{zoneId}/dns_records?type=A&name={record}";
@@ -166,16 +189,13 @@ static async Task<string> GetCloudflareRecordId(
                                 $" and body:\n{await response.Content.ReadAsStringAsync(token)}");
         }
 
+        span.Finish();
         return id;
     }
-    catch
+    catch (Exception e)
     {
-        spanStatus = SpanStatus.UnknownError;
+        span.Finish(e);
         throw;
-    }
-    finally
-    {
-        span.Finish(spanStatus);
     }
 }
 
@@ -287,23 +307,20 @@ static async Task<string> GetIpAddress(
                 // Task should be completed (see 'await' above) but possibly throws here.
                 serviceResponse = await completedTask;
                 var parseSpan = querySpan.StartChild("parse.ip");
-                var parseSpanStatus = SpanStatus.Ok;
                 try
                 {
                     serviceResponse = Regex.Replace(serviceResponse, "[^0-9.]", "");
                     var ipAddress = IPAddress.Parse(serviceResponse).ToString();
+                    SentrySdk.AddBreadcrumb("Cancelling other HTTP requests since a valid IP address was found.");
                     cancelSource.Cancel(); // Cancel any other get in-flight
                     parseSpan.Description = $"Resolved: {ipAddress}";
+                    parseSpan.Finish();
                     return ipAddress;
                 }
-                catch
+                catch (Exception e)
                 {
-                    parseSpanStatus = SpanStatus.UnknownError;
+                    parseSpan.Finish(e);
                     throw;
-                }
-                finally
-                {
-                    parseSpan.Finish(parseSpanStatus);
                 }
             }
             catch (Exception e)
