@@ -30,8 +30,6 @@ var transaction = SentrySdk.StartTransaction("dynamic-dns", "dns-update");
 var transactionStatus = SpanStatus.Ok; 
 
 SentrySdk.ConfigureScope(s => s.Transaction = transaction);
-// TODO: Remove once resolved: https://github.com/getsentry/sentry-dotnet/issues/920
-SentrySdk.ConfigureScope(s => s.SetTag("run-id", Guid.NewGuid().ToString()));
 try
 {
     // TODO: Properly validate expected input

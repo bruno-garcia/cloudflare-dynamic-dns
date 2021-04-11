@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudflareDynamicDns", "CloudflareDynamicDns\CloudflareDynamicDns.csproj", "{9D84B5B2-F666-4E67-BC87-B2853158CBCC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudflareDynamicDns", "CloudflareDynamicDns.csproj", "{9D84B5B2-F666-4E67-BC87-B2853158CBCC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

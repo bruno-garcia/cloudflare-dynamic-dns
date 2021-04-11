@@ -20,12 +20,50 @@ Install [.NET 5](http://dot.net/)
 
 Build and publish it in release mode. These instructions describe a [self-contained](https://docs.microsoft.com/en-us/dotnet/core/deploying/#publish-self-contained) app so you don't need to install the .NET runtime in the target machine. It's just a native executable:
 
+## Publishing self-contained
+
 `dotnet publish -c release -r osx-x64`
 
 Replace `osx-x64` with the [runtime identifier of the target machine](https://docs.microsoft.com/en-us/dotnet/core/rid-catalog#using-rids) you expect to run this. For example `win-x64`, `linux-x64`, etc.
 
 A single file, compiled to that machine architecture is built.
-The build prints out the publish location. It's `bin/release/net5.0/osx-x64/publish/`
+The build prints out the publish location. For the command above, it'll be `bin/release/net5.0/osx-x64/publish/`
+
+# Run it on Raspberry Pi
+
+Publish it as a self contained app for Linux on `arm` (this means 32 bits! Use `arm64` if you have a 64 bit OS).
+
+`dotnet publish -c release -r linux-arm -o publish/`
+
+A ~25Mb file is created at: `publish/`. Copy it to the Pi:
+
+`scp publish/CloudflareDynamicDns pi@pi.host:~/`
+
+SSH into the Pi, and try to run it to test it out. Then and add a cron job (note that the cron entry must be on a single line):
+
+```sh
+chmod +x CloudflareDynamicDns
+
+# Validate it works as expected.
+SENTRY_DEBUG=1 \
+    SENTRY_DSN=https://k@sentry.io/1 \
+    ./CloudflareDynamicDns \
+        zone_id \
+        domain.to.update \
+        cloudflare_key
+
+# Now add to the crontab:
+crontab -e
+
+# Run every hour:
+0 * * * * cd /home/pi && SENTRY_DSN=https://k@sentry.io/1 ./CloudflareDynamicDns zone_id domain.to.update cloudflare_key
+```
+
+You can check the crontab logs on syslog:
+
+`grep CRON /var/log/syslog | tail`
+
+Now you can [configure Sentry to raise an alert](https://docs.sentry.io/product/alerts-notifications/) if no transactions named `dns-update` happen in the last N hours.
 
 ## Debugging
 
