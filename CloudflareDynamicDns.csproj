@@ -9,7 +9,6 @@
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <PublishTrimmed>True</PublishTrimmed>
-<!--    <TrimMode>Link</TrimMode>-->
     <PublishSingleFile>True</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
     <ReadyToRun>True</ReadyToRun>
@@ -23,7 +22,7 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <PackageReference Include="Sentry" Version="3.3.0" />
+    <PackageReference Include="Sentry" Version="3.3.1" />
   </ItemGroup>
 
 </Project>
