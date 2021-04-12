@@ -63,7 +63,7 @@ You can check the crontab logs on syslog:
 
 `grep CRON /var/log/syslog | tail`
 
-Now you can [configure Sentry to raise an alert](https://docs.sentry.io/product/alerts-notifications/) if no transactions named `dns-update` happen in the last N hours.
+Now you can [configure Sentry to raise an alert](https://docs.sentry.io/product/alerts-notifications/) if no transactions named `dynamic-dns` happen in the last N hours.
 
 ## Debugging
 
