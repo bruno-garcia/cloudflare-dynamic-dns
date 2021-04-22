@@ -107,6 +107,22 @@ An example transaction created by this program:
 
 ![Sentry transaction](.github/sentry-transaction-example.png)
 
+## Alerts
+
+Once you have a `cron` job configured, transactions will be coming into Sentry at the defined frequency. For examples, 60 seconds:
+
+![Sentry transactions](.github/transaction-list.png)
+
+Now you can create an _Alert_ in Sentry to trigger in case these transactions don't come in after a certain time:
+
+![Sentry Alert list](.github/alert-list.png)
+
+### Triggers
+
+In this example, a warning will be raised if there were less than 2 DNS updates in the previous 2 hours. And a critical alert if there were 0 updates in the last 2 hours. The alert will resolve itself as soon as a single update runs:
+
+![Sentry Alert](.github/alert.png)
+
 # FAQ:
 
 ### Q: What's is the _record_?
