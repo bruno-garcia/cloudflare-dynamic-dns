@@ -65,6 +65,26 @@ You can check the crontab logs on syslog:
 
 Now you can [configure Sentry to raise an alert](https://docs.sentry.io/product/alerts-notifications/) if no transactions named `dynamic-dns` happen in the last N hours.
 
+# Sentry
+
+This project is instrumented with [Sentry](https://sentry.io). If you provide a Sentry DSN (which you can get for free on sentry.io) it will send telemetry data including crash reports and timing information about each run.
+
+You can then configure Sentry to send alerts to you by email or other mechanism, to let you know if the job stopped working and detailed information about what went wrong.
+
+To enable Sentry, provide a DSN via environment variable. For example:
+
+```
+SENTRY_DSN=https://963basdasdaba3a48a69378145586f70b65@o117736.ingest.sentry.io/5703176 \
+    SENTRY_DEBUG=1 \
+    ./CloudflareDynamicDns
+```
+
+`SENTRY_DEBUG=1` is optional, but helps when setting things up, to see what the Sentry SDK is doing.
+
+An example transaction created by this program:
+
+![Sentry transaction](.github/sentry-transaction-example.png)
+
 ## Debugging
 
 Set the environment variable `SENTRY_DEBUG` to `1`. For example: (*replace the SENTRY_DSN with your own*):
@@ -86,26 +106,6 @@ set SENTRY_DEBUG=1
 set SENTRY_DSN=https://k@sentry.io/1
 dotnet run -- zone_id domain.to.update cloudflare_key
 ```
-
-# Sentry
-
-This project is instrumented with [Sentry](https://sentry.io). If you provide a Sentry DSN (which you can get for free on sentry.io) it will send telemetry data including crash reports and timing information about each run.
-
-You can then configure Sentry to send alerts to you by email or other mechanism, to let you know if the job stopped working and detailed information about what went wrong.
-
-To enable Sentry, provide a DSN via environment variable. For example:
-
-```
-SENTRY_DSN=https://963basdasdaba3a48a69378145586f70b65@o117736.ingest.sentry.io/5703176 \
-    SENTRY_DEBUG=1 \
-    ./CloudflareDynamicDns
-```
-
-`SENTRY_DEBUG=1` is optional, but helps when setting things up, to see what the Sentry SDK is doing.
-
-An example transaction created by this program:
-
-![Sentry transaction](.github/sentry-transaction-example.png)
 
 ## Alerts
 
