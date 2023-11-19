@@ -16,7 +16,7 @@ To run this, you'll need:
 
 # Build from source
 
-Install [.NET 5](http://dot.net/)
+Install [.NET 8](http://dot.net/)
 
 Build and publish it in release mode. These instructions describe a [self-contained](https://docs.microsoft.com/en-us/dotnet/core/deploying/#publish-self-contained) app so you don't need to install the .NET runtime in the target machine. It's just a native executable:
 
@@ -35,7 +35,8 @@ Publish it as a self contained app for Linux on `arm` (this means 32 bits! Use `
 
 `dotnet publish -c release -r linux-arm -o publish/`
 
-A ~25Mb file is created at: `publish/`. Copy it to the Pi:
+TODO: Update: 68M untrimmed and JSON is unhappy with reflection while trimming
+A ~13Mb file is created at: `publish/`. Copy it to the Pi:
 
 `scp publish/CloudflareDynamicDns pi@pi.host:~/`
 
