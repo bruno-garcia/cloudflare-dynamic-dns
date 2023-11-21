@@ -2,6 +2,8 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Sentry;
 using Sentry.Profiling;
@@ -16,7 +18,7 @@ SentrySdk.Init(o =>
     o.TracesSampleRate = 1.0; // Capture transactions and spans
     o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
     // TODO: will be added once setting ProfilesSampleRate
-    o.AddIntegration(new ProfilingIntegration());
+    // o.AddIntegration(new ProfilingIntegration());
 });
 
 // Sentry Alert will be set to trigger if the following transaction isn't coming through at the expected rate.
@@ -170,7 +172,9 @@ static async Task<string> GetCloudflareRecordId(
         var response = await client.SendAsync(request, token);
 
         // var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
-        var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
+        var json = await JsonSerializer.DeserializeAsync(
+            await response.Content.ReadAsStreamAsync(token), SourceGenerationContext.Default.CloudflareResponse, token);
+        // var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
         var id = json?.result?[0].id;
         if (id is null)
         {
@@ -219,12 +223,12 @@ static async Task UpdateDnsRecord(
 
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
+            // var body = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
             var ex = new Exception($"Cloudflare request failed: status {response.StatusCode}");
             ex.AddSentryContext("http.context", new Dictionary<string, object>
             {
                 {"request", payload},
-                {"response", body},
+                // {"response", body},
             });
             throw ex;
         }
@@ -392,4 +396,10 @@ internal class CloudflareResponse
 internal class ZoneInfo
 {
     public string? id { get; set; }
+}
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(CloudflareResponse))]
+[JsonSerializable(typeof(ZoneInfo))]
+internal partial class SourceGenerationContext : JsonSerializerContext
+{
 }

@@ -6,12 +6,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>1.0.1</Version>
-<!--    <PublishAot>true</PublishAot>-->
+    <PublishAot>true</PublishAot>
 <!--    <TrimMode>partial</TrimMode>-->
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
-    <PublishSingleFile>True</PublishSingleFile>
+<!--    <PublishSingleFile>True</PublishSingleFile>-->
 <!--    <PublishTrimmed>True</PublishTrimmed>-->
     <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
     <EnableUnsafeUTF7Encoding>False</EnableUnsafeUTF7Encoding>
