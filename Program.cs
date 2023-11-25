@@ -14,7 +14,6 @@ SentrySdk.Init(o =>
     o.SendDefaultPii = true;
     o.AutoSessionTracking = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
-    o.AddExceptionFilterForType<TaskCanceledException>();
     o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
     // TODO: will be added once setting ProfilesSampleRate
     o.AddIntegration(new ProfilingIntegration());
@@ -53,7 +52,7 @@ try
     {
         "https://checkip.amazonaws.com",
         "https://api.ipify.org",
-        "https://api.my-ip.io/ip",
+        "https://api.my-ip.io/v1/ip",
     };
 
     var updateDnsSpan = transaction.StartChild("update.dns");
