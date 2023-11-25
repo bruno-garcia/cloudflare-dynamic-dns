@@ -259,8 +259,15 @@ static async Task<string> GetIpAddress(
             {
                 // TODO: Make status code mapping public
                 httpSpan.Finish(s.ToSpanStatus());
-                // Unwrap Result (task has completed):
-                return s.Result;
+                try
+                {
+                    // Unwrap Result (task has completed or cancelled):
+                    return s.Result;
+                }
+                catch (TaskCanceledException)
+                {
+                    return "";
+                }
             });
         }).ToArray();
 
