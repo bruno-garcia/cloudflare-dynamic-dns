@@ -2,28 +2,32 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <Version>1.0.0</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
-    <PublishTrimmed>True</PublishTrimmed>
     <PublishSingleFile>True</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
     <ReadyToRun>True</ReadyToRun>
-    <DebuggerSupport>False</DebuggerSupport>
+    <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
     <EnableUnsafeUTF7Encoding>False</EnableUnsafeUTF7Encoding>
     <EnableUnsafeBinaryFormatterSerialization>False</EnableUnsafeBinaryFormatterSerialization>
-    <EventSourceSupport>False</EventSourceSupport>
-    <InvariantGlobalization>False</InvariantGlobalization>
-    <UseSystemResourceKeys>True</UseSystemResourceKeys>
     <HttpActivityPropagationSupport>False</HttpActivityPropagationSupport>
   </PropertyGroup>
-  
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SentryOrg>bruno-garcia</SentryOrg>
+    <SentryProject>dynamic-dns</SentryProject>
+    <!-- Set SENTRY_AUTH_TOKEN at build time to upload symbols/sources -->
+    <SentryUploadSymbols>true</SentryUploadSymbols>
+    <EmbedAllSources>true</EmbedAllSources>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="Sentry" Version="3.3.1" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.0-beta-20204-02" PrivateAssets="All" />
+    <PackageReference Include="Sentry" Version="4.0.0-beta.2" />
+    <PackageReference Include="Sentry.Profiling" Version="4.0.0-beta.2" />
   </ItemGroup>
 
 </Project>

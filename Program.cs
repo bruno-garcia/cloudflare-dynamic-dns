@@ -1,16 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 using Sentry;
+using Sentry.Profiling;
 using static System.Console;
 
 // To enable Sentry, provide the Sentry DSN via environment variable: SENTRY_DSN
@@ -18,16 +12,17 @@ SentrySdk.Init(o =>
 {
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
     o.SendDefaultPii = true;
+    o.AutoSessionTracking = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
+    o.AddExceptionFilterForType<TaskCanceledException>();
     o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
-    // https://github.com/getsentry/sentry-dotnet/issues/921
-    o.Environment = Debugger.IsAttached ? "debug" : null;
+    // TODO: will be added once setting ProfilesSampleRate
+    o.AddIntegration(new ProfilingIntegration());
 });
 
 // Sentry Alert will be set to trigger if the following transaction isn't coming through at the expected rate.
 // Example: every hour or so, depending how the cron job running this process is setup.
 var transaction = SentrySdk.StartTransaction("dynamic-dns", "dns-update");
-var transactionStatus = SpanStatus.Ok; 
 
 SentrySdk.ConfigureScope(s => s.Transaction = transaction);
 try
@@ -45,11 +40,11 @@ try
     });
 
     var tokenSource = new CancellationTokenSource();
-    Console.CancelKeyPress += (sender, args) =>
+    CancelKeyPress += (sender, args) =>
     {
         SentrySdk.AddBreadcrumb("ctrl-c received.");
         args.Cancel = true;
-        Console.WriteLine("CTRL+C");
+        WriteLine("CTRL+C");
         tokenSource.Cancel(true);
     };
 
@@ -132,30 +127,27 @@ try
             s.SetTag("record-up-to-date", "true");
         });
     }
-    catch (AllServicesFailedException)
+    catch (AllServicesFailedException asfe)
     {
-        var failure = new SentryEvent
-        {
-            Level = SentryLevel.Fatal,
-            Message = new SentryMessage{Formatted = $"All {serviceUrls.Length} failed to resolve"},
-            Fingerprint = new[] {"all-services-failed"}
-        };
+        var failure = new SentryEvent(
+            new Exception($"All {serviceUrls.Length} failed to resolve", asfe))
+            {
+                Level = SentryLevel.Fatal,
+                Fingerprint = new[] {"all-services-failed"}
+            };
         SentrySdk.CaptureEvent(failure);
     }
     catch (Exception e)
     {
         SentrySdk.CaptureEvent(new SentryEvent(e) {Level = SentryLevel.Fatal});
-
-        transactionStatus = SpanStatus.InternalError; // Make sure the transaction fails
-        // https://github.com/getsentry/sentry-dotnet/issues/919
-        // transaction.Status = SpanStatus.InternalError;
+        transaction.Status = SpanStatus.InternalError;
         throw;
     }
     finally
     {
         tokenSource.Dispose();
         updateDnsSpan.Finish();
-        transaction.Finish(transactionStatus);
+        transaction.Finish();
     }
 }
 finally
@@ -178,7 +170,6 @@ static async Task<string> GetCloudflareRecordId(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
         var response = await client.SendAsync(request, token);
 
-        // var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
         var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
         var id = json?.result?[0].id;
         if (id is null)
