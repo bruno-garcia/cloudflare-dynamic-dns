@@ -12,6 +12,7 @@
     <PublishSingleFile>True</PublishSingleFile>
     <ReadyToRun>True</ReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract>True</IncludeNativeLibrariesForSelfExtract>
     <EnableUnsafeUTF7Encoding>False</EnableUnsafeUTF7Encoding>
     <EnableUnsafeBinaryFormatterSerialization>False</EnableUnsafeBinaryFormatterSerialization>
     <HttpActivityPropagationSupport>False</HttpActivityPropagationSupport>
