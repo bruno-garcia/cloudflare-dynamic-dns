@@ -14,6 +14,7 @@ SentrySdk.Init(o =>
     o.SendDefaultPii = true;
     o.AutoSessionTracking = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
+    o.AddExceptionFilterForType<TaskCanceledException>();
     o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
     // TODO: will be added once setting ProfilesSampleRate
     o.AddIntegration(new ProfilingIntegration());
@@ -39,11 +40,11 @@ try
     });
 
     var tokenSource = new CancellationTokenSource();
-    Console.CancelKeyPress += (sender, args) =>
+    CancelKeyPress += (sender, args) =>
     {
         SentrySdk.AddBreadcrumb("ctrl-c received.");
         args.Cancel = true;
-        Console.WriteLine("CTRL+C");
+        WriteLine("CTRL+C");
         tokenSource.Cancel(true);
     };
 
@@ -157,7 +158,7 @@ finally
 
 static async Task<string> GetCloudflareRecordId(
     HttpMessageInvoker client,
-    ISpanTracer parent,
+    ISpan parent,
     string zoneId, string record, string auth,
     CancellationToken token)
 {
@@ -169,7 +170,6 @@ static async Task<string> GetCloudflareRecordId(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
         var response = await client.SendAsync(request, token);
 
-        // var json = await response.Content.ReadFromJsonAsync<dynamic>(cancellationToken: token);
         var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
         var id = json?.result?[0].id;
         if (id is null)
@@ -190,7 +190,7 @@ static async Task<string> GetCloudflareRecordId(
 
 static async Task UpdateDnsRecord(
     HttpMessageInvoker client,
-    ISpanTracer parent,
+    ISpan parent,
     string ipAddress,
     string zoneId,
     string record,
@@ -243,7 +243,7 @@ static async Task UpdateDnsRecord(
 
 static async Task<string> GetIpAddress(
     HttpClient client, 
-    ISpanTracer span,
+    ISpan span,
     IReadOnlyCollection<string> serviceUrls,
     CancellationToken token)
 {

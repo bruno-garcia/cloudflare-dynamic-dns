@@ -35,8 +35,7 @@ Publish it as a self contained app for Linux on `arm` (this means 32 bits! Use `
 
 `dotnet publish -c release -r linux-arm -o publish/`
 
-TODO: Update: 68M untrimmed and JSON is unhappy with reflection while trimming
-A ~13Mb file is created at: `publish/`. Copy it to the Pi:
+A ~10Mb file is created at: `publish/`. Copy it to the Pi:
 
 `scp publish/CloudflareDynamicDns pi@pi.host:~/`
 
