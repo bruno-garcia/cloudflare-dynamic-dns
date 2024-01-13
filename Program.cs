@@ -263,7 +263,7 @@ static async Task<string> GetIpAddress(
                     // Unwrap Result (task has completed or cancelled):
                     return s.Result;
                 }
-                catch (TaskCanceledException)
+                catch (AggregateException ae) when (ae.InnerException is TaskCanceledException)
                 {
                     return "";
                 }
