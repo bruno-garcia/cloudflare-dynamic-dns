@@ -13,10 +13,13 @@ SentrySdk.Init(o =>
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
     o.SendDefaultPii = true;
     o.AutoSessionTracking = true;
+    o.IsGlobalModeEnabled = true;
     o.TracesSampleRate = 1.0; // Capture transactions and spans
+    o.ProfilesSampleRate = 1.0;
     o.Debug = Environment.GetEnvironmentVariable("SENTRY_DEBUG") != null;
-    // TODO: will be added once setting ProfilesSampleRate
-    o.AddIntegration(new ProfilingIntegration());
+    o.AddIntegration(new ProfilingIntegration(
+        // Block up to 2 seconds to get profiling running before running anything below
+        TimeSpan.FromSeconds(2)));
 });
 
 // Sentry Alert will be set to trigger if the following transaction isn't coming through at the expected rate.
