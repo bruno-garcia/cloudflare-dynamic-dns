@@ -16,7 +16,7 @@ To run this, you'll need:
 
 # Build from source
 
-Install [.NET 8](http://dot.net/)
+Install [.NET 10](http://dot.net/)
 
 Build and publish it in release mode. These instructions describe a [self-contained](https://docs.microsoft.com/en-us/dotnet/core/deploying/#publish-self-contained) app so you don't need to install the .NET runtime in the target machine. It's just a native executable:
 
@@ -27,7 +27,7 @@ Build and publish it in release mode. These instructions describe a [self-contai
 Replace `osx-x64` with the [runtime identifier of the target machine](https://docs.microsoft.com/en-us/dotnet/core/rid-catalog#using-rids) you expect to run this. For example `win-x64`, `linux-x64`, etc.
 
 A single file, compiled to that machine architecture is built.
-The build prints out the publish location. For the command above, it'll be `bin/release/net5.0/osx-x64/publish/`
+The build prints out the publish location. For the command above, it'll be `bin/release/net10.0/osx-x64/publish/`
 
 # Run it on Raspberry Pi
 
