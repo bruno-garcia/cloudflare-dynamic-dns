@@ -29,6 +29,16 @@ Replace `osx-x64` with the [runtime identifier of the target machine](https://do
 A single file, compiled to that machine architecture is built.
 The build prints out the publish location. For the command above, it'll be `bin/release/net10.0/osx-x64/publish/`
 
+# Make a release
+
+Tag and push to trigger the workflow that creates a GitHub release and uploads the artifacts to it:
+
+For example:
+```
+git tag 1.0.4
+git push origin 1.0.4
+```
+
 # Run it on Raspberry Pi
 
 Publish it as a self contained app for Linux on `arm` (this means 32 bits! Use `arm64` if you have a 64 bit OS).
