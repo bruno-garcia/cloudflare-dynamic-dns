@@ -99,6 +99,14 @@ try
         if (currentRecordIpAddress.Any(r => ipAddress == r.ToString()))
         {
             tokenSource.Cancel();
+            // Observe the recordIdTask to prevent UnobservedTaskException
+            // when Cloudflare returns an error (e.g. 503) after cancellation.
+            try { await recordIdTask; }
+            catch (Exception e)
+            {
+                SentrySdk.Experimental.Metrics.EmitCounter("cloudflare.record_id.error", 1,
+                    new Dictionary<string, object> { { "exception", e.GetType().Name } });
+            }
             SentrySdk.AddBreadcrumb("Record already pointing to requested IP address. Nothing to do.");
             WriteLine($"Already up-to-date: {ipAddress}");
         }
@@ -172,6 +180,13 @@ static async Task<string> GetCloudflareRecordId(
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth);
         var response = await client.SendAsync(request, token);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(token);
+            throw new Exception($"Cloudflare returned {(int)response.StatusCode} ({response.StatusCode})" +
+                                $" for record '{record}':\n{body}");
+        }
 
         var json = await response.Content.ReadFromJsonAsync<CloudflareResponse>(cancellationToken: token);
         var id = json?.result?[0].id;
