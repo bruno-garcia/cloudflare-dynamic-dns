@@ -10,6 +10,7 @@ using static System.Console;
 // To enable Sentry, provide the Sentry DSN via environment variable: SENTRY_DSN
 SentrySdk.Init(o =>
 {
+    o.Dsn = Environment.GetEnvironmentVariable("SENTRY_DSN") ?? "";
     o.AttachStacktrace = true; // Event CaptureMessage includes a stacktrace
     o.SendDefaultPii = true;
     o.AutoSessionTracking = true;
