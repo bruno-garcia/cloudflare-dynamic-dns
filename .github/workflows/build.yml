@@ -16,6 +16,12 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - run: dotnet build -c Release
+      - run: dotnet publish -c Release -r linux-x64 -o publish
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CloudflareDynamicDns-linux-x64
+          path: publish/
+          retention-days: 5
