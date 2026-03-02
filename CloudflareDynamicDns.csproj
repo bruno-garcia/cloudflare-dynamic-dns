@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>1.0.3</Version>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
@@ -21,8 +22,9 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <SentryOrg>bruno-garcia</SentryOrg>
     <SentryProject>dynamic-dns</SentryProject>
-    <!-- Set SENTRY_AUTH_TOKEN at build time to upload symbols/sources -->
-    <SentryUploadSymbols>true</SentryUploadSymbols>
+    <!-- Symbol upload is off by default. Enable via: dotnet build /p:SentryUploadSymbols=true -->
+    <!-- Requires SENTRY_AUTH_TOKEN environment variable to be set -->
+    <SentryUploadSymbols Condition="'$(SentryUploadSymbols)' == ''">false</SentryUploadSymbols>
     <EmbedAllSources>true</EmbedAllSources>
   </PropertyGroup>
 
