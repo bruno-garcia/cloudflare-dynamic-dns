@@ -35,7 +35,7 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Publish
-        run: dotnet publish -c Release -r ${{ matrix.rid }} -o publish
+        run: dotnet publish -c Release -r ${{ matrix.rid }} -o publish /p:SentryUploadSymbols=true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 

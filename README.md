@@ -14,6 +14,38 @@ To run this, you'll need:
 4. Cloudflare Auth Token
 5. Optionally a [Sentry DSN](https://docs.sentry.io/product/sentry-basics/dsn-explainer/) to monitor the process
 
+# Build with Nix
+
+If you have [Nix](https://nixos.org/) installed:
+
+```bash
+# Build
+nix build
+
+# Run
+./result/bin/CloudflareDynamicDns zone_id domain.to.update cloudflare_key
+
+# Dev shell with .NET SDK
+nix develop
+```
+
+The build produces the binary with debug symbols (`.pdb`). To upload symbols to Sentry separately:
+
+```bash
+nix build
+sentry-cli debug-files upload result/lib/cloudflare-dynamic-dns/
+```
+
+This requires `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` to be set.
+
+### Updating NuGet dependencies
+
+After changing package references in the `.csproj`:
+
+```bash
+nix develop -c bash -c 'rm -rf /tmp/nuget-pkgs && dotnet restore --packages /tmp/nuget-pkgs && nuget-to-json /tmp/nuget-pkgs > deps.json'
+```
+
 # Build from source
 
 Install [.NET 10](http://dot.net/)
